@@ -44,10 +44,20 @@ app.get('/search', function(req, res) {
 
     var places = JSON.parse(results.body);
     places.features.forEach(function (feature) {
-      message += '__' + feature.properties.label + '__\n';
+      message += feature.properties.label + '\n';
     });
 
-    res.send(message);
+    var response = {
+      "response_type": "in_channel",
+      "text": message,
+      "attachments": [
+        {
+          "text": results.body
+        }
+      ]
+    };
+
+    res.send(response);
   });
 
 });
