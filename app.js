@@ -35,7 +35,7 @@ app.get('/search', function(req, res) {
     return res.send('Error 400: Post syntax incorrect.');
   }
 
-  var url = 'https://search.mapzen.com/v1/search?api_key=' + api_key + '&' + req._parsedUrl.query;
+  var url = 'https://search.mapzen.com/v1/search?api_key=' + api_key + '&' + req.query.text;
   console.log('url', url);
   request.get(url, function (err, results) {
     console.log(err, results.body);
@@ -53,7 +53,7 @@ app.get('/search', function(req, res) {
       "text": message,
       "attachments": [
         {
-          "text": '```' + JSON.stringify(places, null, 2) + '```'
+          "text": JSON.stringify(places, null, 2)
         }
       ]
     };
