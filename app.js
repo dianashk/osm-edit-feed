@@ -3,6 +3,7 @@
 var express = require('express');
 var app = express();
 var bodyParser = require('body-parser');
+var request = require('request');
 
 var api_key = process.env.SEARCH_API_KEY || 'search-raxpuHw';
 
@@ -13,7 +14,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 
-app.post('/search', function(req, res) {
+app.get('/search', function(req, res) {
   /*
    token=PJ4OdQwofdlBK2WUbigefgOL
    team_id=T0001
@@ -27,16 +28,18 @@ app.post('/search', function(req, res) {
    response_url=https://hooks.slack.com/commands/1234/5678
    */
 
-  if(!req.body.hasOwnProperty('text')){
+  console.log('request', JSON.stringify(req.query, null, 2));
+
+  if(!req.query.hasOwnProperty('text')){
     res.statusCode = 400;
     return res.send('Error 400: Post syntax incorrect.');
   }
 
-  var url = 'https://search.mapzen.com/v1/search?api_key=' + api_key + '&' + req.body.text;
+  var url = 'https://search.mapzen.com/v1/search?api_key=' + api_key + '&' + req._parsedUrl.query;
   console.log('url', url);
   request.get(url, function (err, results) {
-    console.log(err, results);
-    res.json(results);
+    console.log(err, results.body);
+    res.json(JSON.parse(results.body));
   });
 
 });
