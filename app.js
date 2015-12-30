@@ -39,7 +39,15 @@ app.get('/search', function(req, res) {
   console.log('url', url);
   request.get(url, function (err, results) {
     console.log(err, results.body);
-    res.json(JSON.parse(results.body));
+
+    var message = 'Here\'s what we found:\n';
+
+    var places = JSON.parse(results.body);
+    places.features.forEach(function (feature) {
+      message += '__' + feature.properties.label + '__\n';
+    });
+
+    res.send(message);
   });
 
 });
