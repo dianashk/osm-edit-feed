@@ -40,8 +40,7 @@ app.get('/search', function(req, res) {
   request.get(url, function (err, results) {
     console.log(err, results.body);
 
-    var message = 'Here\'s what we found:\n';
-
+    var message = '';
     var places = JSON.parse(results.body);
     places.features.forEach(function (feature) {
       message += feature.properties.label + '\n';
@@ -52,7 +51,7 @@ app.get('/search', function(req, res) {
       "text": message,
       "attachments": [
         {
-          "text": results.body
+          "text": JSON.stringify(places, null, 2)
         }
       ]
     };
