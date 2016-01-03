@@ -53,6 +53,9 @@ app.get('/search', function(req, res) {
       "text": message,
       "attachments": [
         {
+          "title": "Search Results for " + req.query.text,
+          "title_link": 'http://geojson.io/#data=data:application/json,' + encodeURIComponent(JSON.stringify(places)),
+          "author_link": url,
           "text": JSON.stringify(places, null, 2)
         }
       ]
