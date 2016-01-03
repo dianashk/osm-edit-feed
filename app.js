@@ -40,8 +40,12 @@ app.get('/search', function(req, res) {
   request.get(url, function (err, results) {
     console.log(err, results.body);
 
-    var message = '';
     var places = JSON.parse(results.body);
+
+    var message = '<' + url + '| Click to see original query>\n';
+    message += '<' + 'http://geojson.io/#data=data:application/json,' +
+               encodeURIComponent(JSON.stringify(places)) + '| Click to see on a map>\n';
+
     var count = 0;
     places.features.forEach(function (feature) {
       count++;
@@ -53,9 +57,6 @@ app.get('/search', function(req, res) {
       "text": message,
       "attachments": [
         {
-          "title": "Search Results for " + req.query.text,
-          "title_link": 'http://geojson.io/#data=data:application/json,' + encodeURIComponent(JSON.stringify(places)),
-          "author_link": url,
           "text": JSON.stringify(places, null, 2)
         }
       ]
