@@ -5,7 +5,7 @@ var app = express();
 var bodyParser = require('body-parser');
 var request = require('request');
 
-var api_key = process.env.SEARCH_API_KEY || 'search-raxpuHw';
+var api_key = process.env.SEARCH_API_KEY;
 
 // parse application/x-www-form-urlencoded
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -16,14 +16,14 @@ app.use(bodyParser.json());
 
 app.get('/search', function(req, res) {
   /*
-   token=PJ4OdQwofdlBK2WUbigefgOL
-   team_id=T0001
+   token=<string>
+   team_id=<string>
    team_domain=example
-   channel_id=C2147483705
+   channel_id=<string>
    channel_name=test
-   user_id=U2147483697
-   user_name=Steve
-   command=/weather
+   user_id=<string>
+   user_name=<string>
+   command=/mapzen_search
    text=94070
    response_url=https://hooks.slack.com/commands/1234/5678
    */
@@ -42,22 +42,17 @@ app.get('/search', function(req, res) {
 
     var places = JSON.parse(results.body);
 
-    var message = '<' + url + '| Click to see original query>\n';
-    message += '<' + 'http://geojson.io/#data=data:application/json,' +
-               encodeURIComponent(JSON.stringify(places)) + '| Click to see on a map>\n';
-
-    var count = 0;
-    places.features.forEach(function (feature) {
-      count++;
-      message += count + '.  _' + feature.properties.label + '_\n';
-    });
+    var message = makeSearchLink(url);
+    message += makeMapLink(places);
+    message += makeResultList(places);
 
     var response = {
       "response_type": "in_channel",
       "text": message,
       "attachments": [
         {
-          "text": JSON.stringify(places, null, 2)
+          "text": JSON.stringify(places, null, 2),
+          "color": "#F78181"
         }
       ]
     };
@@ -66,5 +61,26 @@ app.get('/search', function(req, res) {
   });
 
 });
+
+function makeSearchLink(url) {
+  return '<' + url + '| Click to see original query>\n';
+}
+
+function makeMapLink(places) {
+  return '<' + 'http://geojson.io/#data=data:application/json,' +
+         encodeURIComponent(JSON.stringify(places)) + '| Click to see on a map>\n';
+}
+
+function makeResultList(places) {
+  var message = '';
+  var count = 0;
+
+  places.features.forEach(function (feature) {
+    count++;
+    message += count + '.  _' + feature.properties.label + '_\n';
+  });
+
+  return message;
+}
 
 app.listen(process.env.PORT || 3000);
