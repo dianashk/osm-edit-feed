@@ -213,7 +213,7 @@ function processItem(item) {
 
     if (vizChannel) {
       request({
-          url: 'http://localhost:3000',
+          url: vizChannel,
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -222,7 +222,7 @@ function processItem(item) {
         },
         function (err, res, body) {
           if (err) {
-            console.log('sent json update', body)
+            console.log('sent json update', body);
           }
         });
     }
@@ -256,8 +256,21 @@ function makeJSONResponse(type, icon, item) {
     }
   });
 
-  result.lat = (item.bounds.minlat + item.bounds.maxlat) / 2;
-  result.lng = (item.bounds.minlon + item.bounds.maxlon) / 2;
+  if (!result.hasOwnProperty('marker')) {
+    result.marker = icon;
+  }
+
+  if (item.hasOwnProperty('lat') && item.hasOwnProperty('lon')) {
+    result.lat = item.lat;
+    result.lng = item.lon;
+  }
+  else if (item.bounds) {
+    result.lat = (item.bounds.minlat + item.bounds.maxlat) / 2;
+    result.lng = (item.bounds.minlon + item.bounds.maxlon) / 2;
+  }
+  else {
+    console.log(JSON.stringify(item, null, 2));
+  }
 
   console.log(JSON.stringify(result, null, 2));
 
