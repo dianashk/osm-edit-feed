@@ -261,12 +261,12 @@ function makeJSONResponse(type, icon, item) {
   }
 
   if (item.hasOwnProperty('lat') && item.hasOwnProperty('lon')) {
-    result.lat = item.lat;
-    result.lng = item.lon;
+    result.lat = parseFloat(item.lat);
+    result.lng = parseFloat(item.lon);
   }
-  else if (item.bounds) {
-    result.lat = (item.bounds.minlat + item.bounds.maxlat) / 2;
-    result.lng = (item.bounds.minlon + item.bounds.maxlon) / 2;
+  else if (item.bounds && item.bounds[0]) {
+    result.lat = (parseFloat(item.bounds[0].minlat) + parseFloat(item.bounds[0].maxlat)) / 2.0;
+    result.lng = (parseFloat(item.bounds[0].minlon) + parseFloat(item.bounds[0].maxlon)) / 2.0;
   }
   else {
     console.log(JSON.stringify(item, null, 2));
