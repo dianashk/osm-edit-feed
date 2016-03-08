@@ -1,128 +1,309 @@
-'use strict';
-
-var express = require('express');
-var app = express();
-var bodyParser = require('body-parser');
 var request = require('request');
+var qs = require('qs');
+var xml2json = require('xml2json');
 
-var api_key = process.env.SEARCH_API_KEY;
-
-// parse application/x-www-form-urlencoded
-app.use(bodyParser.urlencoded({ extended: false }));
-
-// parse application/json
-app.use(bodyParser.json());
+var slackChannel = process.env.SLACK_CHANNEL;
+var vizChannel = process.env.VIZ_CHANNEL;
 
 
-app.get('/search', function(req, res) {
+console.log(slackChannel, vizChannel);
 
-  if (!isValidRequest(req, res)) {
-    return;
-  }
+// presets
+var baseUrl = 'https://overpass-api.de/';
+var minuteStatePath = 'api/augmented_diff_status';
+var changePath = 'api/augmented_diff?';
 
-  sendRequest('search', api_key, req.query.text, function (err, url, places) {
-    var response = makeResponse(url, places);
-    res.send(response);
-  });
+var previousState = null;
 
-});
-
-app.get('/autocomplete', function(req, res) {
-
-  if (!isValidRequest(req, res)) {
-    return;
-  }
-
-  sendRequest('autocomplete', api_key, req.query.text, function (err, url, places) {
-    var response = makeResponse(url, places);
-    res.send(response);
-  });
-
-});
-
-
-function isValidRequest(req, res) {
-  /*
-   token=<string>
-   team_id=<string>
-   team_domain=example
-   channel_id=<string>
-   channel_name=test
-   user_id=<string>
-   user_name=<string>
-   command=/mapzen_search
-   text=94070
-   response_url=https://hooks.slack.com/commands/1234/5678
-   */
-
-  console.log('request', JSON.stringify(req.query, null, 2));
-
-  if(!req.query.hasOwnProperty('text')){
-    res.statusCode = 400;
-    res.send('Error 400: Post syntax incorrect.');
-    return false;
-  }
-
-  return true;
+function minuteStateUrl() {
+  return baseUrl + minuteStatePath;
 }
 
-function sendRequest(endpoint, api_key, params, callback) {
-  var url = 'https://search.mapzen.com/v1/' + endpoint + '?api_key=' + api_key + '&' + params;
-  console.log('url', url);
-  request.get(url, function (err, results) {
-    if (err) {
-      console.log(err);
-      callback(err);
+function changeUrl(id, bbox) {
+  return baseUrl + changePath + qs.stringify({
+      id: id, info: 'no', bbox: bbox || '-180,-90,180,90'
+    });
+}
+
+function requestState(cb) {
+  request(minuteStateUrl(), function(err, res, body) {
+
+    //console.log('requestState', minuteStateUrl(), body);
+
+    cb(null, parseInt(body, 10));
+  });
+}
+
+function requestChangeset(state, cb, bbox) {
+  request(changeUrl(state, bbox), function(err, res, body) {
+
+    console.log('requestChangeset', changeUrl(state, bbox));
+
+    cb(null, body);
+  });
+}
+
+var interval = setInterval(function () {
+  requestState(function (err, state) {
+
+    if (previousState === state) {
       return;
     }
 
-    console.log(results.body);
+    previousState = state;
 
-    var places = JSON.parse(results.body);
-    callback(null, url, places);
-  });
-}
+    requestChangeset(state, function (err, xml) {
+      var options = {
+        object: true,
+        reversible: false,
+        coerce: false,
+        sanitize: true,
+        trim: true,
+        arrayNotation: true
+      };
+      var obj = xml2json.toJson(xml, options);
 
-function makeResponse(url, places) {
-  var message = makeSearchLink(url);
-  message += makeMapLink(places);
-  message += makeResultList(places);
-
-  return {
-    "response_type": "in_channel",
-    "text": message,
-    "attachments": [
-      {
-        "text": JSON.stringify(places, null, 2),
-        "color": "#F78181"
+      if (!obj.osm || obj.osm.length === 0) {
+        console.log('nothing in this update');
+        return;
       }
-    ]
-  };
+      var actions = obj.osm[0].action;
+
+      if (!actions) {
+        console.log('nothing in this update');
+        return;
+      }
+
+      console.log('Action count: ', actions.length);
+
+      actions.forEach(function (action) {
+        processItem(action);
+      });
+
+
+      /**
+       { osm:
+   [ { version: '0.6',
+       generator: 'Overpass API',
+       note: [Object],
+       meta: [Object],
+       action: [Object],
+       remark: [Object] } ] }
+       */
+
+    });
+  });
+
+//  clearInterval(interval);
+
+}, 1000);
+
+
+/**
+{
+ "type": "create",
+ "node": [
+   {
+     "id": "4040989969",
+     "lat": "-33.9130852",
+     "lon": "151.0683015",
+     "version": "1",
+     "timestamp": "2016-03-04T22:59:07Z",
+     "changeset": "37618611",
+     "uid": "46482",
+     "user": "Leon K",
+     "tag": [
+       {
+         "k": "traffic_calming",
+         "v": "hump"
+       }
+     ]
+   }
+ ]
 }
+ */
 
-function makeSearchLink(url) {
-  return '<' + url + '| Click to see original query>\n';
-}
+var TAGS = {
+  'amenity': {
+    'hospital': ':hospital:',
+    'clinic': ':hospital:',
+    'doctors': ':hospital:',
+    'baby_hatch': ':baby:',
+    'school': ':school:',
+    'police': ':police_car:',
+    'social_facility': ':couple:',
+    'childcare': ':baby:',
+    'toilets': ':toilet:'
+  },
+  'healthcare:specialty': {
+    'abortion': ':syringe:',
+    'fertility_clinic': ':syringe:',
+    'gynaecology': ':woman:',
+    'womens_clinic': ':woman:',
+    'family_planning': ':family:',
+    'maternity_waiting_shelter': ':family:'
+  },
+  'healthcare': {
+    'midwife': 'woman'
+  },
+  'social_facility': {
+    'shelter': ':house:',
+    'domestic_violence_facility': ':house:',
+    'gender_based_violence_facility': ':house:'
+  },
+  'social_facility:for': {
+    'abuse': ':house:'
+  },
+  'highway': {
+    'street_lamp': ':bulb:',
+    'bus_stop': ':oncoming_bus:'
+  },
+  'emergency': {
+    'phone': ':telephone_receiver:'
+  },
+  'polling_station': {
+    'yes': ':office:'
+  },
+  'wheelchair': {
+    'yes': ':wheelchair:'
+  },
+  'vending': {
+    'feminine_hygiene': ':womens:'
+  }
+};
 
-function makeMapLink(places) {
-  return '<' + 'http://geojson.io/#data=data:application/json,' +
-         encodeURIComponent(JSON.stringify(places)) + '| Click to see on a map>\n';
-}
+function processItem(item) {
+  var type = item.type;
 
-function makeResultList(places) {
-  var message = '';
-  var count = 0;
+  var obj = item.node || item.way || item.relation || item.new[0].relation || item.new[0].node || item.new[0].way;
 
-  if (!places || !places.features || places.features.length === 0) {
-    return 'No results found';
+  if (!obj) {
+    console.log(item);
+    return;
   }
 
-  places.features.forEach(function (feature) {
-    count++;
-    message += count + '.  _' + feature.properties.label + '_\n';
-  });
+  if (obj[0].tag) {
 
-  return message;
+    var icon = checkTags(obj[0].tag);
+
+    if (!icon) {
+      //console.log('nope :(');
+      return;
+    }
+
+    //console.log(JSON.stringify(item, null, 2)); //, obj[0].tag);
+
+    console.log('yay, inclusive tag!');
+
+    if (slackChannel) {
+      request({
+          url: slackChannel,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(makeResponse(type, icon, obj[0]))
+        },
+        function (err, res, body) {
+          if (err) {
+            console.log('sent update', body)
+          }
+        });
+    }
+
+    if (vizChannel) {
+      request({
+          url: vizChannel,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(makeJSONResponse(type, icon, obj[0]))
+        },
+        function (err, res, body) {
+          if (err) {
+            console.log('sent json update', body);
+          }
+        });
+    }
+  }
 }
 
-app.listen(process.env.PORT || 3000);
+function checkTags(tags) {
+  var icon = null;
+  tags.forEach(function (tag) {
+    if (TAGS.hasOwnProperty(tag.k) && TAGS[tag.k].hasOwnProperty(tag.v)) {
+      icon = TAGS[tag.k][tag.v];
+    }
+  });
+  return icon;
+}
+
+function makeJSONResponse(type, icon, item) {
+  var osm = 'http://www.openstreetmap.org';
+  var result = {};
+
+  result.icon = icon;
+
+  result.userUrl = osm + '/user/' + item.user;
+  result.user = item.user;
+  result.changestUrl = osm + '/changeset/' + item.changeset;
+  result.type = type;
+
+  item.tag.forEach(function (tag) {
+    if (tag.k === 'name') {
+      result.marker = icon + '  ' + tag.v;
+    }
+  });
+
+  if (!result.hasOwnProperty('marker')) {
+    result.marker = icon;
+  }
+
+  if (item.hasOwnProperty('lat') && item.hasOwnProperty('lon')) {
+    result.lat = item.lat;
+    result.lng = item.lon;
+  }
+  else if (item.bounds) {
+    result.lat = (item.bounds.minlat + item.bounds.maxlat) / 2;
+    result.lng = (item.bounds.minlon + item.bounds.maxlon) / 2;
+  }
+  else {
+    console.log(JSON.stringify(item, null, 2));
+  }
+
+  console.log(JSON.stringify(result, null, 2));
+
+  return result;
+}
+
+function makeResponse(type, icon, item) {
+  var osm = 'http://www.openstreetmap.org';
+  var text = '';
+
+  text += '~~~~~~~~~~~~~~~~~~~~~ ' + icon + ' ~~~~~~~~~~~~~~~~~~~~~';
+
+  var fields = [];
+
+  fields.push(text);
+  fields.push( 'User: <' + osm + '/user/' + item.user + '|' + item.user + '>');
+  fields.push( 'Changeset: <' + osm + '/changeset/' + item.changeset + '|' + item.changeset + '>');
+  fields.push( 'Type: `' + type + '`' );
+
+  var tags = [];
+  tags.push( 'Tags: ' );
+  item.tag.forEach(function (tag) {
+    tags.push( '> `' + tag.k + '` = `' + tag.v + '`' );
+    if (tag.k === 'name') {
+      fields.push('Name: *' + tag.v + '*');
+    }
+  });
+
+  //console.log(JSON.stringify(item, null, 2));
+
+  fields = fields.concat(tags);
+
+  return {
+    text: fields.join('\n')
+  };
+}
